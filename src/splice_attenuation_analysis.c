@@ -437,9 +437,12 @@ int main(int argc, char *argv[]) {
     SpliceSites sites = get_splice_sites_from_gff(gff);
     log_debug("Found %i splice sites", sites.n);
 
+    log_debug("Outputting compact output to: %s", argv[4]);
     FILE *out = fopen(argv[4], "w");
     fprintf(out, COMPACT_HEADER_STRING);
 
+
+    log_debug("Outputting probabilities output to: %s", argv[5]);
     FILE *out_scores = fopen(argv[5], "w");
     kstring_t header = {0};
     kputs(PREFIX_HEADER_STRING, &header);
