@@ -370,7 +370,7 @@ void build_compact_output_line(CompactOutputRow row, kstring_t *s) {
     kputc('\t', s);
     kputs(row.type == ACCEPTOR ? "acceptor" : "donor", s);
     kputc('\t', s);
-    kputw(row.var_pos, s);
+    kputw(row.var_pos+1, s);
     kputc('\t', s);
     kputd(row.var_ref, s);
     kputc('\t', s);
@@ -480,11 +480,11 @@ int main(int argc, char *argv[]) {
             if (site.strand == STRAND_FWD) {
                 splice_site_range = (Range) { site.pos + 1, site.pos + 3 };
             } else { // site.strand == STRAND_REV
-                splice_site_range = (Range) { site.pos - 1, site.pos + 1 };
+                splice_site_range = (Range) { site.pos - 2, site.pos };
             }
         } else { // site.type == ACCEPTOR
             if (site.strand == STRAND_FWD) {
-                splice_site_range = (Range) { site.pos - 1, site.pos + 1};
+                splice_site_range = (Range) { site.pos - 2, site.pos };
             } else { // site.strand == STRAND_REV
                 splice_site_range = (Range) { site.pos + 1, site.pos + 3 };
             }
