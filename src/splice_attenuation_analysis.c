@@ -331,7 +331,7 @@ int predict_alt_position(const Model *models, const faidx_t *fai, const char *ch
     return 0;
 }
 
-void get_diff_position(const size_t num_preds, const float *refs, const float *alts, const SpliceSiteType type, int *out_index) {
+void get_diff_position(const size_t num_preds, const float *refs, const float *alts, const int type, int *out_index) {
     int max_gain_index = 0;
     float max_gain = 0.0;
     for (int i = type; i < num_preds; i += NUM_SCORES) {
@@ -341,7 +341,7 @@ void get_diff_position(const size_t num_preds, const float *refs, const float *a
 
         max_gain = gain;
 
-        max_gain_index = ((i - type) - (SPLICEAI_WINDOW_PADDING * NUM_SCORES)) / NUM_SCORES; // transform to an index of -50:50
+        max_gain_index = ((i - (int) type) - (SPLICEAI_WINDOW_PADDING * NUM_SCORES)) / NUM_SCORES; // transform to an index of -50:50
     }
 
     *out_index = max_gain_index;
@@ -421,8 +421,9 @@ void build_probabilities_output_line(ProbabilityOutputRow row, kstring_t *s) {
 int main(int argc, char *argv[]) {
     setenv("TF_CPP_MIN_LOG_LEVEL", "1", TENSORFLOW_LOG_LEVEL_SILENT);
 
-    if (argc != 5) {
+    if (argc != 6) {
         fprintf(stderr, "Run as: ./canonical_splice_analyzer <spliceai_model_dir> <human_fa> <gff> <out_compact.tsv> <out_probabilities.tsv>");
+        exit(1);
     }
 
     const char *models_dir_path = argv[1];
