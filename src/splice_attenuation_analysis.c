@@ -422,7 +422,7 @@ int main(int argc, char *argv[]) {
     setenv("TF_CPP_MIN_LOG_LEVEL", "1", TENSORFLOW_LOG_LEVEL_SILENT);
 
     if (argc != 5) {
-        fprintf(stdout, "Run as: ./canonical_splice_analyzer <spliceai_model_dir> <human_fa> <gff> <out.tsv>");
+        fprintf(stderr, "Run as: ./canonical_splice_analyzer <spliceai_model_dir> <human_fa> <gff> <out_compact.tsv> <out_probabilities.tsv>");
     }
 
     const char *models_dir_path = argv[1];
@@ -534,8 +534,8 @@ int main(int argc, char *argv[]) {
                     kstring_t s = {0};
                     float ref_pair = 0.0, alt_pair = 0.0, ref_competitor = 0.0, alt_competitor = 0.0;
                     if (site.has_pair) {
-                        ref_pair = ref_pair_predictions[site.type];
-                        alt_pair = alt_pair_predictions[site.type];
+                        ref_pair = ref_pair_predictions[site.type == DONOR ? ACCEPTOR : DONOR];
+                        alt_pair = alt_pair_predictions[site.type == DONOR ? ACCEPTOR : DONOR];
                     }
                     if (site.has_competitor) {
                         ref_competitor = ref_competitor_predictions[site.type];
