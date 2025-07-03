@@ -27,7 +27,7 @@
 
 #define BASES "ACGT"
 
-#define COMPACT_HEADER_STRING "chr\tpos\tgene\ttid\tstrand\ttype\tvar_pos\tvar_ref\tvar_alt\tcanonical_pos\tcanonical_ref\tcanonical_alt\tcryptic_pos\tcryptic_ref\tcryptic_alt\tpair_canonical_pos\tpair_canonical_ref\tpair_canonical_alt\tpair_cryptic_pos\tpair_cryptic_ref\tpair_cryptic_alt\tcompetitor_canonical_pos\tcompetitor_canonical_ref\tcompetitor_canonical_alt\tcompetitor_cryptic_pos\tcompetitor_cryptic_ref\tcompetitor_cryptic_alt\n"
+#define COMPACT_HEADER_STRING "chr\tpos\tgene\ttid\tstrand\ttype\tref_seq\tvar_pos\tvar_ref\tvar_alt\tcanonical_pos\tcanonical_ref\tcanonical_alt\tcryptic_pos\tcryptic_ref\tcryptic_alt\tpair_canonical_pos\tpair_canonical_ref\tpair_canonical_alt\tpair_cryptic_pos\tpair_cryptic_ref\tpair_cryptic_alt\tcompetitor_canonical_pos\tcompetitor_canonical_ref\tcompetitor_canonical_alt\tcompetitor_cryptic_pos\tcompetitor_cryptic_ref\tcompetitor_cryptic_alt\n"
 // #define PREFIX_HEADER_STRING "chr\tpos\tgene\ttid\tstrand\ttype"
 
 typedef enum {
@@ -77,6 +77,7 @@ typedef struct {
     uint32_t tid;
     int strand;
     SpliceSiteType type;
+    char *reference_seq;
     int64_t var_pos;
     char ref;
     char alt;
@@ -150,15 +151,16 @@ SpliceSites get_splice_sites_from_gff(const gff_t *gff) {
     splice_sites_init(SPLICE_SITE_MALLOC_START_COUNT, &sites);
 
     regidx_t *transcripts = gff_get((gff_t *) gff, idx_tscript); // Removes const qualification for this call as it's not typed const, but it is a simple getter without consequences
-    regitr_t *itr = regitr_init(transcripts);
-    while (regitr_loop(itr)) {
-        const gf_tscript_t *tr = regitr_payload(itr, gf_tscript_t *);
+    regitr_t *tr_itr = regitr_init(transcripts);
+
+    while (regitr_loop(tr_itr)) {
+        const gf_tscript_t *tr = regitr_payload(tr_itr, gf_tscript_t *);
 
         // Only want protein coding and stranded transcripts
         if ((tr->type != GF_PROTEIN_CODING) | (tr->gene->type != GF_PROTEIN_CODING)) continue;
-        if (tr->strand == STRAND_UNK) log_error("Transcript has an UNKNOWN strand. Skipping...", itr->seq);
+        if (tr->strand == STRAND_UNK) log_error("Transcript has an UNKNOWN strand. Skipping...", tr_itr->seq);
 
-        const char *chr = itr->seq;
+        const char *chr = tr_itr->seq;
         const uint32_t rid = tr->gene->iseq;
 
         // Only want things located on chromosomes
@@ -170,6 +172,7 @@ SpliceSites get_splice_sites_from_gff(const gff_t *gff) {
         const int64_t tr_beg = tr->gene->beg, tr_end = tr->gene->end;
         const uint32_t tid = tr->id;
         const int strand = tr->strand;
+
 
         // We use CDS because we only care about splicing within the coding region.
         // This means it also doesn't matter if UTR splice boundaries are wrong
@@ -186,8 +189,9 @@ SpliceSites get_splice_sites_from_gff(const gff_t *gff) {
                 if (i != tr->ncds-1) sites.a[sites.n++] = init_splice_site(chr, rid, cds_end, ACCEPTOR, gene_name, tr_beg, tr_end, tid, strand); // As long as its not the first exon (approaches from 3' -> 5')
             }
         }
-
     }
+
+    regitr_destroy(tr_itr);
 
     // Get pairs
     const uint32_t pair_start = 0;
@@ -399,11 +403,11 @@ void get_diff_position(const size_t num_preds, const float *refs, const float *a
 }
 
 OutputRow init_compact_row(
-    const char *chr, const int64_t pos, const char *gene, const uint32_t tid, const int strand, const SpliceSiteType type,
+    const char *chr, const int64_t pos, const char *gene, const uint32_t tid, const int strand, const SpliceSiteType type, char *reference_seq,
     const int64_t var_pos, const char ref, const char alt, const Site canonical, const Site cryptic,
     const Site pair_canonical, const Site pair_cryptic, const Site competitor_canonical, const Site competitor_cryptic
 ) {
-    return (OutputRow) { chr, pos, gene, tid, strand, type, var_pos, ref, alt, canonical, cryptic, pair_canonical, pair_cryptic, competitor_canonical, competitor_cryptic};
+    return (OutputRow) { chr, pos, gene, tid, strand, type, reference_seq, var_pos, ref, alt, canonical, cryptic, pair_canonical, pair_cryptic, competitor_canonical, competitor_cryptic};
 }
 
 void build_compact_output_line(OutputRow row, kstring_t *s) {
@@ -418,6 +422,8 @@ void build_compact_output_line(OutputRow row, kstring_t *s) {
     kputs(row.strand == STRAND_FWD ? "fwd" : "rev", s);
     kputc('\t', s);
     kputs(row.type == ACCEPTOR ? "acceptor" : "donor", s);
+    kputc('\t', s);
+    kputs(row.reference_seq, s);
     kputc('\t', s);
     kputl(row.var_pos+1, s);
     kputc('\t', s);
@@ -573,6 +579,8 @@ int main(int argc, char *argv[]) {
         char *canonical_site_seq = faidx_fetch_seq(fai, site.chr, (int) splice_site_range.start, (int) splice_site_range.end, &splice_site_len);
         canonical_site_seq[splice_site_len] = '\0';
 
+        char *reference_seq = faidx_fetch_seq(fai, site.chr, (int) splice_site_range.start - 1, (int) splice_site_range.end, &splice_site_len);
+
 
         for (int p = 0; p < 2; p++) {
             const char ref = canonical_site_seq[p];
@@ -639,7 +647,7 @@ int main(int argc, char *argv[]) {
                 kstring_t s = {0};
 
                 OutputRow row = init_compact_row(
-                    site.chr, site.pos, site.gene_name, site.tid, site.strand, site.type, splice_site_range.start + p, 
+                    site.chr, site.pos, site.gene_name, site.tid, site.strand, site.type, reference_seq, splice_site_range.start + p, 
                     ref, alt, canonical, cryptic, pair_canonical, pair_cryptic, competitor_canonical, competitor_cryptic
                 );
                 build_compact_output_line(row, &s);
@@ -648,6 +656,7 @@ int main(int argc, char *argv[]) {
         }
 
         free(canonical_site_seq);
+        free(reference_seq);
     }
 
     fclose(out);
