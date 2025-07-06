@@ -28,7 +28,7 @@
 #define BASES "ACGT"
 
 #define COMPACT_HEADER_STRING "chr\tpos\tgene\ttid\tstrand\ttype\tref_seq\tvar_pos\tvar_ref\tvar_alt\tcanonical_pos\tcanonical_ref\tcanonical_alt\tcryptic_pos\tcryptic_ref\tcryptic_alt\tpair_canonical_pos\tpair_canonical_ref\tpair_canonical_alt\tpair_cryptic_pos\tpair_cryptic_ref\tpair_cryptic_alt\tcompetitor_canonical_pos\tcompetitor_canonical_ref\tcompetitor_canonical_alt\tcompetitor_cryptic_pos\tcompetitor_cryptic_ref\tcompetitor_cryptic_alt\n"
-// #define PREFIX_HEADER_STRING "chr\tpos\tgene\ttid\tstrand\ttype"
+#define PREFIX_HEADER_STRING "chr\tpos\tgene\ttid\tstrand\ttype\tref_seq\tvar_pos\tvariant\ttarget\tallele"
 
 typedef enum {
     ACCEPTOR = ACCEPTOR_POS,
@@ -79,6 +79,7 @@ typedef struct {
     SpliceSiteType type;
     char *reference_seq;
     int64_t var_pos;
+
     char ref;
     char alt;
     Site canonical;
@@ -89,10 +90,25 @@ typedef struct {
     Site competitor_cryptic;
 } OutputRow;
 
-typedef enum {
-    REF,
-    ALT
-} ProbabilityType;
+typedef struct {
+    const char *chr;
+    const int64_t pos;
+    const char *gene_name;
+    const uint32_t tid;
+    const int strand;
+    const SpliceSiteType type;
+    const char *reference_seq;
+    const int64_t var_pos;
+    const char variant;
+    const char *target;
+    const char *allele;
+    const float *probabilities;
+} ProbabilityRow;
+
+// typedef enum {
+//     REF,
+//     ALT
+// } ProbabilityType;
 
 // typedef struct {
 //     const char *chr;
@@ -474,29 +490,42 @@ void build_compact_output_line(OutputRow row, kstring_t *s) {
     if (row.competitor_cryptic.exists) kputd(row.competitor_cryptic.alt, s);
 }
 
-// ProbabilityOutputRow init_probability_row(const char *chr, const int64_t pos, const char *gene, const uint32_t tid, const int strand, const SpliceSiteType type, const ProbabilityType prob_type, float *probabilities) {
-//     return (ProbabilityOutputRow) { chr, pos, gene, tid, strand, type, prob_type, probabilities };
-//
-// }
+ProbabilityRow init_probability_row(const char *chr, const int64_t pos, const char *gene, const uint32_t tid, const int strand, const SpliceSiteType type, const char *reference_seq, const int64_t var_pos, const char variant, const char *target, const char *allele, float *probabilities) {
+    return (ProbabilityRow) { chr, pos, gene, tid, strand, type, reference_seq, var_pos, variant, target, allele, probabilities };
+}
 
-// void build_probabilities_output_line(ProbabilityOutputRow row, kstring_t *s) {
-//     kputs(row.chr, s);
-//     kputc('\t', s);
-//     kputl((row.pos+1), s);
-//     kputc('\t', s);
-//     kputs(row.gene_name, s);
-//     kputc('\t', s);
-//     kputl(row.tid, s);
-//     kputc('\t', s);
-//     kputs(row.strand == STRAND_FWD ? "fwd" : "rev", s);
-//     kputc('\t', s);
-//     kputs(row.type == ACCEPTOR ? "acceptor" : "donor", s);
-//     kputc('\t', s);
-//     kputs(row.prob_type == REF ? "ref" : "alt", s);
-//
-//     for (uint32_t i = 0; i <= 101; i++) {
-//         kputc('\t', s);
-//         kputd(row.probabilities[i * NUM_SCORES + row.type], s);
+void build_probabilities_output_line(ProbabilityRow row, kstring_t *s) {
+    kputs(row.chr, s);
+    kputc('\t', s);
+    kputl(row.pos+1, s);
+    kputc('\t', s);
+    kputs(row.gene_name, s);
+    kputc('\t', s);
+    kputl(row.tid, s);
+    kputc('\t', s);
+    kputs(row.strand == STRAND_FWD ? "fwd" : "rev", s);
+    kputc('\t', s);
+    kputs(row.type == ACCEPTOR ? "acceptor" : "donor", s);
+    kputc('\t', s);
+    kputs(row.reference_seq, s);
+    kputc('\t', s);
+    kputl(row.var_pos+1, s);
+    kputc('\t', s);
+    kputc(row.variant, s);
+    kputc('\t', s);
+    kputs(row.target, s);
+    kputc('\t', s);
+    kputs(row.allele, s);
+
+    for (uint32_t i = 0; i < 101; i++) {
+        kputc('\t', s);
+        kputd(row.probabilities[i * NUM_SCORES + row.type], s);
+    }
+}
+
+// void get_type_probabilities(const float *probabilities, const SpliceSiteType type, float *typed_probabilities) {
+//     for (int i = type, typed_i = 0; i < SPLICEAI_TENSOR_SIZE; i += NUM_SCORES, typed_i++) {
+//         typed_probabilities[typed_i] = probabilities[i];
 //     }
 // }
 
@@ -504,8 +533,8 @@ void build_compact_output_line(OutputRow row, kstring_t *s) {
 int main(int argc, char *argv[]) {
     setenv("TF_CPP_MIN_LOG_LEVEL", "1", TENSORFLOW_LOG_LEVEL_SILENT);
 
-    if (argc != 5) {
-        fprintf(stderr, "Run as: ./canonical_splice_analyzer <spliceai_model_dir> <human_fa> <gff> <out.tsv>");
+    if (argc != 6) {
+        fprintf(stderr, "Run as: ./canonical_splice_analyzer <spliceai_model_dir> <human_fa> <gff> <out_compact.tsv> <out_complete.tsv>");
         exit(1);
     }
 
@@ -526,16 +555,16 @@ int main(int argc, char *argv[]) {
     fprintf(out, COMPACT_HEADER_STRING);
 
 
-    // log_debug("Outputting probabilities output to: %s", argv[5]);
-    // FILE *out_scores = fopen(argv[5], "w");
-    // kstring_t header = {0};
-    // kputs(PREFIX_HEADER_STRING, &header);
-    // for (int i = 0; i <= 101; i++) {
-    //     kputc('\t', &header);
-    //     kputs("idx_", &header);
-    //     kputw(i, &header);
-    // }
-    // fprintf(out_scores, "%s\n", header.s);
+    log_debug("Outputting probabilities output to: %s", argv[5]);
+    FILE *out_scores = fopen(argv[5], "w");
+    kstring_t header = {0};
+    kputs(PREFIX_HEADER_STRING, &header);
+    for (int i = 0; i <= 101; i++) {
+        kputc('\t', &header);
+        kputs("idx_", &header);
+        kputw(i, &header);
+    }
+    fprintf(out_scores, "%s\n", header.s);
 
     for (int i = 0; i < sites.n; i++) {
         SpliceSite site = sites.a[i];
@@ -546,10 +575,15 @@ int main(int argc, char *argv[]) {
         float *ref_canonical_predictions;
         predict_ref_position(models, fai, site.chr, site.pos, gene_bounds, site.strand, SPLICEAI_WINDOW_PADDING, &num_ref_canonical_predictions, &ref_canonical_predictions);
 
+        // float ref_canonical_probabilities[101];
+        // get_type_probabilities(ref_canonical_predictions, site.type, ref_canonical_probabilities);
+
         int num_ref_pair_predictions;
         float *ref_pair_predictions;
+        // float ref_pair_probabilities[101];
         if (site.has_pair) {
             predict_ref_position(models, fai, site.chr, site.pair_position, gene_bounds, site.strand, SPLICEAI_WINDOW_PADDING, &num_ref_pair_predictions, &ref_pair_predictions);
+            // get_type_probabilities(ref_pair_predictions, get_pair_type(site.type), ref_pair_probabilities);
         }
 
         int num_ref_competitor_predictions;
@@ -584,6 +618,22 @@ int main(int argc, char *argv[]) {
 
         for (int p = 0; p < 2; p++) {
             const char ref = canonical_site_seq[p];
+
+            {
+                kstring_t s = {0};
+                ProbabilityRow canonical_ref = init_probability_row(site.chr, site.pos, site.gene_name, site.tid, site.strand, site.type, reference_seq, splice_site_range.start + p, ref, "canonical", "ref", ref_canonical_predictions);
+                build_probabilities_output_line(canonical_ref, &s);
+                fprintf(out_scores, "%s\n", s.s);
+            }
+
+            {
+                kstring_t s = {0};
+                ProbabilityRow pair_ref = init_probability_row(site.chr, site.pos, site.gene_name, site.tid, site.strand, site.type, reference_seq, splice_site_range.start + p, ref, "pair", "ref", ref_pair_predictions);
+                build_probabilities_output_line(pair_ref, &s);
+                fprintf(out_scores, "%s\n", s.s);
+            }
+
+
             for (int b = 0; b < 4; b++) {
                 const char alt = BASES[b];
                 if (ref == alt) continue;
@@ -591,6 +641,10 @@ int main(int argc, char *argv[]) {
                 int num_alt_canonical_predictions;
                 float *alt_canonical_predictions;
                 predict_alt_position(models, fai, site.chr, site.pos, splice_site_range.start + p, alt, gene_bounds, site.strand, SPLICEAI_WINDOW_PADDING, &num_alt_canonical_predictions, &alt_canonical_predictions);
+
+                // float alt_canonical_probabilities[101];
+                // get_type_probabilities(alt_canonical_predictions, site.type, alt_canonical_probabilities);
+
                 Site canonical = {
                     1,
                     0,
@@ -602,9 +656,9 @@ int main(int argc, char *argv[]) {
                 Site pair_canonical = {0};
                 Site pair_cryptic = {0};
 
+                float *alt_pair_predictions = NULL;
                 if (site.has_pair) {
                     int num_alt_pair_predictions = 0;
-                    float *alt_pair_predictions = NULL;
 
                     int variant_out_of_range = predict_alt_position(models, fai, site.chr, site.pair_position, splice_site_range.start + p, alt, gene_bounds, site.strand, SPLICEAI_WINDOW_PADDING, &num_alt_pair_predictions, &alt_pair_predictions);
 
@@ -613,6 +667,9 @@ int main(int argc, char *argv[]) {
                     }
 
                     SpliceSiteType pair_type = get_pair_type(site.type);
+
+                    // get_type_probabilities(alt_pair_predictions, pair_type, alt_pair_probabilities);
+
                     pair_canonical = (Site) {
                         1,
                         0,
@@ -641,6 +698,20 @@ int main(int argc, char *argv[]) {
                         alt_competitor_predictions[SPLICEAI_WINDOW_PADDING * NUM_SCORES + (int) site.type]
                     };
                     competitor_cryptic = get_cryptic_site(SPLICEAI_TENSOR_SIZE, ref_competitor_predictions, alt_competitor_predictions, (int) site.type);
+                }
+
+                {
+                    kstring_t s = {0};
+                    ProbabilityRow canonical_alt = init_probability_row(site.chr, site.pos, site.gene_name, site.tid, site.strand, site.type, reference_seq, splice_site_range.start + p, alt, "canonical", "alt", alt_canonical_predictions);
+                    build_probabilities_output_line(canonical_alt, &s);
+                    fprintf(out_scores, "%s\n", s.s);
+                }
+
+                if (site.has_pair) {
+                    kstring_t s = {0};
+                    ProbabilityRow pair_alt = init_probability_row(site.chr, site.pos, site.gene_name, site.tid, site.strand, site.type, reference_seq, splice_site_range.start + p, alt, "pair", "alt", alt_pair_predictions);
+                    build_probabilities_output_line(pair_alt, &s);
+                    fprintf(out_scores, "%s\n", s.s);
                 }
 
 
