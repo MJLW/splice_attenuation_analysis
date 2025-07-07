@@ -559,7 +559,7 @@ int main(int argc, char *argv[]) {
     FILE *out_scores = fopen(argv[5], "w");
     kstring_t header = {0};
     kputs(PREFIX_HEADER_STRING, &header);
-    for (int i = 0; i <= 101; i++) {
+    for (int i = 0; i < 101; i++) {
         kputc('\t', &header);
         kputs("idx_", &header);
         kputw(i, &header);
@@ -628,7 +628,7 @@ int main(int argc, char *argv[]) {
 
             {
                 kstring_t s = {0};
-                ProbabilityRow pair_ref = init_probability_row(site.chr, site.pos, site.gene_name, site.tid, site.strand, site.type, reference_seq, splice_site_range.start + p, ref, "pair", "ref", ref_pair_predictions);
+                ProbabilityRow pair_ref = init_probability_row(site.chr, site.pos, site.gene_name, site.tid, site.strand, get_pair_type(site.type), reference_seq, splice_site_range.start + p, ref, "pair", "ref", ref_pair_predictions);
                 build_probabilities_output_line(pair_ref, &s);
                 fprintf(out_scores, "%s\n", s.s);
             }
@@ -709,7 +709,7 @@ int main(int argc, char *argv[]) {
 
                 if (site.has_pair) {
                     kstring_t s = {0};
-                    ProbabilityRow pair_alt = init_probability_row(site.chr, site.pos, site.gene_name, site.tid, site.strand, site.type, reference_seq, splice_site_range.start + p, alt, "pair", "alt", alt_pair_predictions);
+                    ProbabilityRow pair_alt = init_probability_row(site.chr, site.pos, site.gene_name, site.tid, site.strand, get_pair_type(site.type), reference_seq, splice_site_range.start + p, alt, "pair", "alt", alt_pair_predictions);
                     build_probabilities_output_line(pair_alt, &s);
                     fprintf(out_scores, "%s\n", s.s);
                 }
